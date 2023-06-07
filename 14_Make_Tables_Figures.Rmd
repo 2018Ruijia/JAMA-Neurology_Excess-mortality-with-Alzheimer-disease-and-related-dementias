@@ -1,0 +1,1306 @@
+---
+title: "Dementia Excess Deaths_paper"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+windowsFonts(A = windowsFont("Times New Roman"))
+
+library(pacman)
+p_load("here", "dplyr", "tidyr", "usdata", "psych", "readr","forecast","lubridate","epitools","tidyr",
+       "reshape","vroom","usdata","pBrackets","grid","viridis","ggplot2","ggpubr","stringr","kableExtra","ggrepel",
+       "patchwork", "ggsci","scales")
+
+
+```
+
+First,read Table 1- Observed, Estimated Expected, and Estimated Excess Mortality Associated with Alzheimer’s Disease and Dementia from March 2020 to February 2022 in the United States 
+
+
+```{r setup, include=FALSE}
+
+formatC2 <- function(x, ...) {
+    formatC(round(x), format = "d", big.mark = ",")
+}
+
+####read data 
+age_df <- readRDS ("results/01_data/year_df_age.rds") 
+all_sex_race_df<-readRDS("results/01_data/year_df_all_gende_racer.rds")
+
+
+
+all_sex_race_age_df <- rbind(age_df, all_sex_race_df)
+
+###convert it from wide to long 
+all_sex_race_age_df <- all_sex_race_age_df %>% dplyr::rename (observed_year1= p1.observed,
+                                               expected_year1= p1.expected, 
+                                               expected.lower_year1= p1.expected.lower,
+                                               expected.upper_year1= p1.expected.upper,
+                                               excess_year1= p1.excess, 
+                                               excess.lower_year1= p1.excess.lower,
+                                               excess.upper_year1= p1.excess.upper,
+                                               observed_year2= p2.observed,
+                                               expected_year2= p2.expected, 
+                                               expected.lower_year2= p2.expected.lower,
+                                               expected.upper_year2= p2.expected.upper,
+                                               excess_year2= p2.excess, 
+                                               excess.lower_year2= p2.excess.lower,
+                                               excess.upper_year2= p2.excess.upper) %>% 
+                                               mutate (
+                                               rr_year1=observed_year1/expected_year1,
+                                               rr_lower_year1=observed_year1/expected.upper_year1,
+                                               rr_upper_year1=observed_year1/expected.lower_year1,
+                                               rr_year2=observed_year2/expected_year2,
+                                               rr_lower_year2=observed_year2/expected.upper_year2,
+                                               rr_upper_year2=observed_year2/expected.lower_year2)
+
+
+
+table_1 <-all_sex_race_age_df%>%
+    transmute(
+        group,
+        observe_year1=round(observed_year1, digits=0),
+        expected_year1 = sprintf(
+            "%s (%s - %s)",
+            formatC2(expected_year1),
+            formatC2 (expected.lower_year1),
+            formatC2(expected.upper_year1)
+        ),
+        excess_year1 = sprintf(
+            "%s (%s - %s)",
+            formatC2(excess_year1),
+            formatC2(excess.lower_year1),
+            formatC2(excess.upper_year1)
+        ),
+        relative_risk_year1 = sprintf(
+            "%s (%s - %s)",
+            round(rr_year1,digits=2),
+            round(rr_lower_year1,digits=2),
+            round(rr_upper_year1,digits=2)
+        ),
+       observe_year2=round(observed_year2, digits=0),
+       expected_year2 = sprintf(
+            "%s (%s - %s)",
+            formatC2(expected_year2),
+            formatC2 (expected.lower_year2),
+            formatC2(expected.upper_year2)
+        ),
+        excess_year2 = sprintf(
+            "%s (%s - %s)",
+            formatC2(excess_year2),
+            formatC2(excess.lower_year2),
+            formatC2(excess.upper_year2)
+        ),
+        relative_risk_year2 = sprintf(
+            "%s (%s - %s)",
+            round(rr_year2,digits=2),
+            round(rr_lower_year2,digits=2),
+            round(rr_upper_year2,digits=2)
+        )
+        )
+        
+table_1$group <- factor(table_1$group, levels=c("All", "65-74", "75-84", "85+", "Female", 
+                                                "Male","White", "Black", "Hispanic", "Asian"))
+
+table_1<- table_1[order(table_1$group),]
+
+
+Table1<-table_1  %>%
+    # select(-excess_per_100k ) %>%
+    kable(
+        #   format = "html",
+        col.names = c(
+            # "Population",
+            "",
+            "Observed deaths, March, 2020 to February,2021",
+            "Expected deaths, March, 2020 to February,2021",
+            "Excess deaths (95% PI), March, 2020 to February,2021",
+            "Observed to expected ratio (95% PI), March, 2020 to February,2021",
+            "Observed deaths, March, 2021 to February,2022",
+            "Expected deaths, March, 2021 to February,2022",
+            "Excess deaths (95% PI), March, 2021 to February,2022",
+            "Observed to expected ratio (95% PI), March, 2021 to February,2022"
+        ),
+        booktabs = TRUE
+    ) %>%
+    kableExtra::kable_styling(bootstrap = c("striped", "scale_down")) %>%
+    kableExtra::pack_rows("All ADRD Deaths", 1,1) %>%
+    kableExtra::pack_rows("Age Groups", 2,4) %>%
+    kableExtra::pack_rows("Sex", 5,6) %>%
+    kableExtra::pack_rows("Race", 7, 10) 
+
+
+Table1
+```
+
+Figure 1. crude Excess Deaths Associated with Alzheimer’s Disease and Dementia between March 2020 and February 2022 in the Unites States, by Sex. 
+
+
+```{r pressure, echo=FALSE}
+######read data
+total_df<-readRDS(here("results/01_data/total_ADRD_deaths.rds"))                         
+
+##set date
+total_df$date<-as.Date(total_df$date)
+
+total_df <-total_df%>% mutate_if(is.list,as.numeric)
+
+p_x_labels <- ggplot() +
+    geom_segment(aes(
+        x = c(1, 13.1),
+        xend = c(13, 25),
+        y = 0,
+        yend = 0
+    )) +
+    geom_segment(aes(
+        x = c(1, 13, 13.1, 25),
+        xend = c(1, 13, 13.1, 25),
+        y = 0,
+        yend = .05
+    )) + 
+    scale_x_continuous("",
+                   breaks = c(7, 19),
+                   labels = c("Year 1 \n
+                            Total Excess Deaths: 94,688 (95% PI =84,192, 104,891)","Year 2 \n
+        Total Excess Deaths: 21,586 (95% PI =10,631,32,450)"), expand = c(0.02, 0.02)) + 
+scale_y_continuous(NULL) + 
+    theme_minimal() + 
+    theme(axis.text.y = element_blank(),
+          panel.grid = element_blank())+
+    theme(text = element_text(family = "serif", size = 12))
+
+
+
+long_total <- total_df  %>% 
+  pivot_longer(
+    cols = c("observed","expected"),
+    names_to = "type_death",
+    values_to = "value"
+) %>% mutate (type_death <- as.factor(type_death))
+
+
+####plot the monthly change plots 
+#--Early Pandemic: March 1, 2020 through September 31, 2020--Alpha Wave: October 1, 2020 through June 30, 2021--Delta Wave: July 1, 2021 through November 31, 2021--Omicron Wave: December 1, 2021 through February 28, 2022
+total_plot <-
+      ggplot(data = long_total ,aes(x = date, y = value,group=type_death, colour=type_death)) + geom_line(
+    aes(color=type_death))+
+    geom_ribbon(
+        aes(
+            x = date,
+            y = value,
+            ymin = expected.lower,
+            ymax = expected.upper
+        ),
+        data = long_total %>% filter(type_death=="expected"),
+        alpha = 0.2,
+        fill = "#6F99ADFF", colour=NA,
+    )  + 
+    scale_x_date(limits = as.Date(c("2020-03-01", "2022-02-01")),
+                 date_breaks  = "3 month",
+                 date_labels = "%Y-%m") +
+ scale_color_manual(values = c("black","#B24745FF"),
+                    labels=c("Expected Deaths","Observed Deaths"),name="")+
+    labs(x = '', y = 'Crude ADRD Related Deaths per Month') +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-10-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-07-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-12-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-12-15")),
+        linetype = "dashed",
+        color = "red",
+        size = 0.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2020-06-01"),
+        y = 55000,
+        label = "Early Pandemic",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=0.4
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-01-15"),
+        y =55000,
+        label = "Alpha",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=0
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-08-01"),
+        y = 55000,
+        label = "Delta",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=-0.4
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2022-01-15"),
+        y = 55000,
+        label = "Omicron",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=0.35
+    ) +
+  annotate(geom = "text", x = as.Date("2020-12-18"), y = 50, label = "Vaccine rollout", hjust = "left", size=3,  family="serif")+ 
+theme_bw() +
+theme(strip.background = element_rect(fill = "#20854E99")) +
+theme(text = element_text(family = "serif", size = 11))+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank())+theme(legend.position = "right")
+
+
+
+total_plot_final<-total_plot+p_x_labels + plot_layout(ncol = 1, heights = c(5, 0.1))
+
+
+ggsave(here("results/02_figures/total_plot.pdf"), total_plot_final, width =10, height = 5, scale = 1)
+    
+
+
+
+```
+
+Figure 2. Age-adjusted Per-Capita Excess Deaths Associated with Alzheimer’s Disease and Dementia between March 2020 and February 2022 in the Unites States, by Sex. 
+
+
+```{r pressure, echo=FALSE}
+######read data
+gender_stand_df<-readRDS(here("results/01_data/month_stand_df_all_gender_race.rds"))                                  %>% filter(group %in% c("Male", "Female"))
+
+##set date
+gender_stand_df$date<-as.Date(gender_stand_df$date)
+
+gender_stand_df <-gender_stand_df %>% mutate_if(is.list,as.numeric)
+
+p_x_labels <- ggplot() +
+    geom_segment(aes(
+        x = c(1, 13.1, 28, 40.1),
+        xend = c(13, 25, 40, 52),
+        y = 0,
+        yend = 0
+    )) +
+    geom_segment(aes(
+        x = c(1, 13, 13.1, 25,28,  40, 40.1, 52),
+        xend = c(1, 13, 13.1, 25,28,  40, 40.1, 52),
+        y = 0,
+        yend = .05
+    )) + 
+    scale_x_continuous("",
+                   breaks = c(7, 19, 35, 46),
+                   labels = c("Year 1","Year 2","Year 1","Year 2"), expand = c(0.02, 0.02)) + 
+scale_y_continuous(NULL) + 
+    theme_minimal() + 
+    theme(axis.text.y = element_blank(),
+          panel.grid = element_blank())+
+    theme(text = element_text(family = "serif", size = 11))
+
+
+
+long_gender <- gender_stand_df  %>% 
+  pivot_longer(
+    cols = c("age_adj_observed_rates","age_adj_expected_rates"),
+    names_to = "type_death",
+    values_to = "value"
+) %>% mutate (type_death <- as.factor(type_death))
+
+
+####plot the monthly change plots 
+#--Early Pandemic: March 1, 2020 through September 31, 2020--Alpha Wave: October 1, 2020 through June 30, 2021--Delta Wave: July 1, 2021 through November 31, 2021--Omicron Wave: December 1, 2021 through February 28, 2022
+gender_plot <-
+      ggplot(data = long_gender,aes(x = date, y = value,group=type_death, colour=type_death)) + geom_line(
+    aes(color=type_death))+
+    geom_ribbon(
+        aes(
+            x = date,
+            y = value,
+            ymin = age_adj_expected_lwr_rates,
+            ymax = age_adj_expected_upr_rates
+        ),
+        data = long_gender %>% filter(type_death=="age_adj_expected_rates"),
+        alpha = 0.2,
+        fill = "#6F99ADFF", colour=NA,
+    )  + 
+    scale_x_date(limits = as.Date(c("2020-03-01", "2022-02-01")),
+                 date_breaks  = "3 month",
+                 date_labels = "%Y-%m") +
+ scale_color_manual(values = c("black","#B24745FF"),
+                    labels=c("Expected Deaths","Observed Deaths"),name="")+
+    labs(x = '', y = 'Age Standardized Deaths per Month (per 100,000 population)') +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-10-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-07-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-12-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-12-15")),
+        linetype = "dashed",
+        color = "red",
+        size = 0.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2020-06-01"),
+        y = 120,
+        label = "Early Pandemic",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=0.4
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-01-15"),
+        y = 120,
+        label = "Alpha",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=0
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-08-01"),
+        y = 120,
+        label = "Delta",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=-0.4
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2022-01-15"),
+        y = 120,
+        label = "Omicron",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=0.35
+    ) +
+  annotate(geom = "text", x = as.Date("2020-12-18"), y = 50, label = "Vaccine rollout", hjust = "left", size=3,  family = "serif")+ 
+facet_grid( ~ group) +
+theme_bw() +
+theme(strip.background = element_rect(fill = "#20854E99")) +
+theme(text = element_text(family = "serif", size = 11))+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank())+theme(legend.position = "right")
+
+
+
+gender_plot_final<-gender_plot  + p_x_labels + plot_layout(ncol = 1, heights = c(5, 0.1))
+
+
+ggsave(here("results/02_figures/gender_plot.pdf"), gender_plot_final, width =12, height = 5, scale = 1)
+ggsave(here("results/02_figures/gender_plot.emf"), gender_plot_final, width =12, height = 5, scale = 1)
+    
+
+
+
+```
+
+Figure 3. Age-adjusted Per-Capita Excess Deaths Associated with Alzheimer’s Disease and Dementia between March 2020 and February 2022 in the United States, by Race and Ethnicity Status. 
+```{r pressure, echo=FALSE}
+
+######read data
+race_stand_df<-readRDS(here("results/01_data/month_stand_df_all_gender_race.rds")) %>% 
+                 filter(group %in% c("White", "Black", "Hispanic", "Asian"))
+
+##recode data 
+race_stand_df$date<-as.Date(race_stand_df$date)
+
+##recode race
+
+race_stand_df$group<-factor(race_stand_df$group, levels=c("White", "Black", "Hispanic", "Asian"),
+                           labels=c("Non-Hispanic White", "Non-Hispanic Black", "Hispanic", "Non-Hispanic Asian"))
+
+race_stand_df <-race_stand_df %>% mutate_if(is.list,as.numeric)
+
+
+long_race<- race_stand_df  %>% 
+  pivot_longer(
+    cols = c("age_adj_observed_rates","age_adj_expected_rates"),
+    names_to = "type_death",
+    values_to = "value"
+) %>% mutate (type_death <- as.factor(type_death))
+
+
+
+####plot the monthly change plots 
+race_plot<-  ggplot(data = long_race,aes(x = date, y = value,group=type_death, colour=type_death)) + geom_line(
+    aes(color=type_death))+
+    geom_ribbon(
+        aes(
+            x = date,
+            y = value,
+            ymin = age_adj_expected_lwr_rates,
+            ymax = age_adj_expected_upr_rates
+        ),
+        data = long_race %>% filter(type_death=="age_adj_expected_rates"),
+        alpha = 0.2,
+        fill = "#6F99ADFF", colour=NA,
+    )  + 
+    scale_x_date(limits = as.Date(c("2020-03-01", "2022-02-01")),
+                 date_breaks  = "3 month",
+                 date_labels = "%Y-%m") +
+ scale_color_manual(values = c("black","#B24745FF"),
+                    labels=c("Expected Deaths","Observed Deaths"),name="") +
+    labs(x = '', y = 'Age Standardized Deaths per month (per 100,000 population)') +
+    geom_vline(
+        xintercept = as.Date("2020-10-1"),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-07-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-12-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-12-15")),
+        linetype = "dashed",
+        color = "red",
+        size = 0.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2020-06-01"),
+        y = 120,
+        label = "Early Pandemic",
+        color = "black",
+        family = "serif",
+        size = 3,hjust=0.4
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-01-15"),
+        y = 120,
+        label = "Alpha",
+        color = "black",
+        family = "serif",
+        size = 3, hjust=0
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-08-01"),
+        y = 120,
+        label = "Delta",
+        color = "black",
+        family = "serif",
+        size = 3, hjust=-0.4
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2022-01-15"),
+        y = 120,
+        label = "Omicron",
+        color = "black",
+        family = "serif",
+        size = 3, hjust=0.35
+    ) +
+    # annotate(
+    #     "segment",
+    #     x = as.Date("2021-02-01"),
+    #     xend = as.Date("2020-12-01"),
+    #     y = 25,
+    #     yend = 0,
+    #     family = "serif",
+    #     size = 0.3,
+    #     arrow = arrow(),
+    #     color = "red"
+    # ) +
+  annotate(geom = "text", x = as.Date("2020-12-18"), y = 23, label = "Vaccine rollout", hjust = "left", vjust="0.5", size=2 , family = "serif")+
+    theme_bw() + theme(text = element_text(family = "serif", size = 12)) +
+    facet_wrap( ~ group) +
+    theme(strip.background = element_rect(fill ="#20854E99"))+
+    theme(text = element_text(family = "serif", size = 12))+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank())
+
+race_plot_final<-race_plot  + p_x_labels + plot_layout(ncol = 1, heights = c(5, 0.1))
+
+
+ggsave(here("results/02_figures/race_plot.pdf"), race_plot_final, width = 12, height = 5, scale = 1)
+ggsave(here("results/02_figures/race_plot.emf"), race_plot_final, width = 12, height = 5, scale = 1)
+
+
+
+
+```
+Figure 4. Crude Excess Deaths Associated with Alzheimer’s Disease and Dementia between March 2020 and February 2022 in the United States, by Place of Death. 
+```{r pressure, echo=FALSE}
+
+######read data
+
+
+p_x_labels2 <- ggplot() +
+    geom_segment(aes(
+        x = c(1, 12.6, 28.5, 40.6),
+        xend = c(12.5, 24.5, 40.5, 52),
+        y = 0,
+        yend = 0
+    )) +
+    geom_segment(aes(
+        x = c(1, 12.5, 12.6, 24.5,28.5,  40.5, 40.6, 52),
+        xend = c(1, 12.5, 12.6, 24.5,28.5,  40.5, 40.6, 52),
+        y = 0,
+        yend = .05
+    )) + 
+    scale_x_continuous("",
+                   breaks = c(7, 19, 35, 46),
+                   labels = c("Year 1","Year 2","Year 1","Year 2"), expand = c(0.02, 0.02)) + 
+scale_y_continuous(NULL) + 
+    theme_minimal() + 
+    theme(axis.text.y = element_blank(),
+          panel.grid = element_blank())+
+    theme(text = element_text(family = "serif", size = 11))
+
+
+
+
+
+pod_crude_df<-readRDS("results/01_data/pod_crude_month_df.rds")
+pod_crude_df$date<-as.Date(pod_crude_df$date)
+
+pod_crude_df$pod<-factor(pod_crude_df$pod, levels=c("Nursing Home","Home", "Medical Facilities",  "Hospice"),
+                         labels=c( "Nursing Home/Long term care","Home", "Medical Facilities", "Hospice"))
+
+
+pod_crude_df<-pod_crude_df %>% mutate (pod_cat=ifelse(pod %in% c( "Nursing Home/Long term care","Home"), "A", "B"))
+
+pod_crude_df <-pod_crude_df %>% mutate_if(is.list,as.numeric)
+
+long_pod<- pod_crude_df  %>% 
+  pivot_longer(
+    cols = c("observed","expected"),
+    names_to = "type_death",
+    values_to = "value"
+) %>% mutate (type_death <- as.factor(type_death))
+
+####plot the monthly change plots
+pod_plot_A <-
+    ggplot(data = long_pod %>% filter(pod_cat=="A"),aes(x = date, y = value,group=type_death, colour=type_death)) + geom_line(
+    aes(color=type_death))+
+    geom_ribbon(
+        aes(
+            x = date,
+            y = value,
+            ymin = expected.lower,
+            ymax = expected.upper
+        ),
+        data = long_pod%>% filter( pod_cat=="A" & type_death=="expected"),
+        alpha = 0.2,
+        fill = "#6F99ADFF", colour=NA,
+    )  + 
+    scale_x_date(limits = as.Date(c("2020-03-01", "2022-02-01")),
+                 date_breaks  = "3 month",
+                 date_labels = "%Y-%m") +
+ scale_color_manual(values = c("black","#B24745FF"),
+                    labels=c("Expected Deaths","Observed Deaths"),name="") +
+ #   labs(x = '', y = 'Age Standardized Deaths per Month') +
+   labs(x = '', y = '') +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-09-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-06-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-11-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-12-01")),
+        linetype = "dashed",
+        color = "red",
+        size = 0.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2020-06-01"),
+        y = Inf,
+        label = "Early Pandemic",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-01-01"),
+        y = Inf,
+        label = "Alpha",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5, hjust=-0.2
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-08-01"),
+        y = Inf,
+        label = "Delta",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2022-01-01"),
+        y = Inf,
+        label = "Omicron",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        geom = "text",
+        x = as.Date("2021-02-05"),
+        y = 200,
+        label = "Vaccine rollout",
+       # hjust = -2,
+        size = 3, 
+        family = "serif"
+    )+theme_bw() + theme(text = element_text(family = "serif", size = 12)) +
+#facet_grid(pod_cat~pod,scales = "free_y", switch = "y") +
+facet_wrap(~pod,nrow=1, scales = "free_x", strip.position = "top") +
+    theme(strip.background = element_rect(fill = "#20854E99"))+
+    theme(text = element_text(family = "serif", size = 12))+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank())
+  
+
+##############################plot b
+
+
+pod_plot_B <-
+    ggplot(data = long_pod %>% filter(pod_cat=="B"),aes(x = date, y = value,group=type_death, colour=type_death)) + geom_line(
+    aes(color=type_death))+
+    geom_ribbon(
+        aes(
+            x = date,
+            y = value,
+            ymin = expected.lower,
+            ymax = expected.upper
+        ),
+        data = long_pod%>% filter( pod_cat=="B" & type_death=="expected"),
+        alpha = 0.2,
+        fill = "#6F99ADFF", colour=NA,
+    )  + 
+    scale_x_date(limits = as.Date(c("2020-03-01", "2022-02-01")),
+                 date_breaks  = "3 month",
+                 date_labels = "%Y-%m") +
+ scale_color_manual(values = c("black","#B24745FF"),
+                    labels=c("Expected Deaths","Observed Deaths"),name="") +
+   labs(x = '', y = 'Number of Deaths per Month') +
+
+ #   labs(x = '', y = '') +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-09-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-06-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-11-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-12-01")),
+        linetype = "dashed",
+        color = "red",
+        size = 0.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2020-06-01"),
+        y = Inf,
+        label = "Early Pandemic",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-01-01"),
+        y = Inf,
+        label = "Alpha",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5, hjust=-0.2
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-08-01"),
+        y = Inf,
+        label = "Delta",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2022-01-01"),
+        y = Inf,
+        label = "Omicron",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        geom = "text",
+        x = as.Date("2021-02-05"),
+        y = 200,
+        label = "Vaccine rollout",
+       # hjust = -2,
+        size = 3, 
+        family = "serif"
+    )+theme_bw() + theme(text = element_text(family = "serif", size = 12)) +
+#facet_grid(pod_cat~pod,scales = "free_y", switch = "y") +
+facet_wrap(~pod,nrow=1, scales = "free_x", strip.position = "top") +
+    theme(strip.background = element_rect(fill = "#20854E99"))+
+    theme(text = element_text(family = "serif", size = 12))+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank())+theme(legend.position = "none")+ theme(
+  axis.title.y = element_text(hjust=7.5)
+)
+
+
+
+
+
+test<- ggplot()+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank())
+
+
+pod_plot_final<- ggarrange (pod_plot_A, pod_plot_B,ggarrange(test,p_x_labels2, widths=c(0.06,1)), common.legend = TRUE, nrow=3, heights=c(1,1,0.2), legend="bottom")
+
+
+ggsave(here("results/02_figures/Figure4.pdf"),pod_plot_final, width = 12, height =6, scale = 1)
+ggsave(here("results/02_figures/Figure4.emf"),pod_plot_final, width = 12, height =6, scale = 1)
+
+
+
+
+```
+
+
+
+
+Figure S1. Percent Differences in the Number of ADRD Deaths (left panel) and Population Sizes (right panel) Between Single-Race vs. Bridged-Race Data (2018-2020). 
+```{R}
+
+num_df<-readRDS(here("results/01_data/num_df.rds") )
+deno_df<-readRDS(here("results/01_data/deno_df_wide.rds") )
+
+
+
+###bar plot by race and by year 
+num_plot<-ggplot(num_df, aes(x = factor(race), y = percent_diff, fill = year, colour =year)) + 
+    geom_bar(stat = "identity", position = "dodge") + scale_fill_jama(name="Year")+ scale_color_jama(name="Year")+theme_bw() +
+    ylab("Percentage Differences in ADRD Deaths (Single Race vs. Bridged Race)") +xlab("Race and Ethnicity Groups") 
+
+
+deno_plot<-ggplot(deno_df, aes(x = factor(race_cat), y = percent_diff, fill = year, colour =year)) + 
+    geom_bar(stat = "identity", position = "dodge") + scale_fill_jama(name="Year")+ scale_color_jama(name="Year")+theme_bw() +
+    ylab("Percentage Differences in Population Size (Single Race vs. Bridged Race)") +xlab("Race and Ethnicity Groups") 
+
+
+    
+ggsave(here("+2022/results/02_figures/s1_num_plot.jpg"),num_plot, width =12, height = 6, scale = 1)
+
+
+########merge the two plots 
+
+figure.S1 <- ggarrange(num_plot, deno_plot,
+                    ncol = 2, nrow = 1, common.legend = TRUE)
+
+ggsave(here("results/02_figures/s1_deno_plot.jpg"),deno_plot, width =12, height = 6, scale = 1)
+ggsave(here("results/02_figures/figure.S1.jpg"), figure.S1, width =15, height = 6, scale = 1)
+
+
+```
+Table S2. Observed and Estimated Expected Deaths Associated with Alzheimer’s Disease and Dementia Between January and December 2019 
+```{R}
+df_2019 <- readRDS("results/01_data/year_df_rate_all_gender_race_2019.rds")
+formatC2 <- function(x, ...) {
+    formatC(round(x), format = "d", big.mark = ",")
+}
+
+table_s2<-df_2019 %>%
+    transmute(
+        group,
+         formatC2(pt.observed),
+        expected_2019_deaths = sprintf(
+            "%s (%s to %s)",
+            formatC2(pt.expected),
+            formatC2(pt.expected.lower),
+            formatC2(pt.expected.upper)
+        ))
+
+
+table_s2 %>%
+    kable(
+        #   format = "html",
+        col.names = c(
+            # "Population",
+            "",
+            "Observed deaths from Jan to December, 2019",
+            "Expected deaths from Jan to December, 2019"
+        ),
+        booktabs = TRUE
+    ) %>%
+    kableExtra::kable_styling(bootstrap = c("striped", "scale_down")) %>%
+    kableExtra::pack_rows("All ADRD Deaths", 1,1) %>%
+    kableExtra::pack_rows("Sex", 2,3) %>%
+    kableExtra::pack_rows("Race", 4, 7) 
+
+```
+
+
+Table s3.Observed, Estimated Expected, and Estimated Crude Excess Mortality Associated with Alzheimer’s Disease or Related Dementia from March 2020 to February 2022 in the United States, Stratified by Racial and Ethnic Identity 
+
+```{r setup, include=FALSE}
+
+formatC2 <- function(x, ...) {
+    formatC(round(x), format = "d", big.mark = ",")
+}
+
+####read data 
+race_df_sen<-readRDS("results/01_data/year_df_race_sen.rds")
+
+
+###convert it from wide to long 
+race_df_sen <- race_df_sen %>% dplyr::rename (observed_year1= p1.observed,
+                                               expected_year1= p1.expected, 
+                                               expected.lower_year1= p1.expected.lower,
+                                               expected.upper_year1= p1.expected.upper,
+                                               excess_year1= p1.excess, 
+                                               excess.lower_year1= p1.excess.lower,
+                                               excess.upper_year1= p1.excess.upper,
+                                               observed_year2= p2.observed,
+                                               expected_year2= p2.expected, 
+                                               expected.lower_year2= p2.expected.lower,
+                                               expected.upper_year2= p2.expected.upper,
+                                               excess_year2= p2.excess, 
+                                               excess.lower_year2= p2.excess.lower,
+                                               excess.upper_year2= p2.excess.upper) %>% 
+                                               mutate (
+                                               rr_year1=observed_year1/expected_year1,
+                                               rr_lower_year1=observed_year1/expected.upper_year1,
+                                               rr_upper_year1=observed_year1/expected.lower_year1,
+                                               rr_year2=observed_year2/expected_year2,
+                                               rr_lower_year2=observed_year2/expected.upper_year2,
+                                               rr_upper_year2=observed_year2/expected.lower_year2)
+
+
+
+table_s3 <-race_df_sen %>%
+    transmute(
+        group,
+        observe_year1=round(observed_year1, digits=0),
+        expected_year1 = sprintf(
+            "%s (%s - %s)",
+            formatC2(expected_year1),
+            formatC2 (expected.lower_year1),
+            formatC2(expected.upper_year1)
+        ),
+        excess_year1 = sprintf(
+            "%s (%s - %s)",
+            formatC2(excess_year1),
+            formatC2(excess.lower_year1),
+            formatC2(excess.upper_year1)
+        ),
+        relative_risk_year1 = sprintf(
+            "%s (%s - %s)",
+            round(rr_year1,digits=2),
+            round(rr_lower_year1,digits=2),
+            round(rr_upper_year1,digits=2)
+        ),
+       observe_year2=round(observed_year2, digits=0),
+       expected_year2 = sprintf(
+            "%s (%s - %s)",
+            formatC2(expected_year2),
+            formatC2 (expected.lower_year2),
+            formatC2(expected.upper_year2)
+        ),
+        excess_year2 = sprintf(
+            "%s (%s - %s)",
+            formatC2(excess_year2),
+            formatC2(excess.lower_year2),
+            formatC2(excess.upper_year2)
+        ),
+        relative_risk_year2 = sprintf(
+            "%s (%s - %s)",
+            round(rr_year2,digits=2),
+            round(rr_lower_year2,digits=2),
+            round(rr_upper_year2,digits=2)
+        )
+        )
+        
+
+
+table_s3
+```
+
+eTable 4. Observed, Estimated Expected, and Estimated Crude Excess Mortality Associated with Alzheimer’s Disease or Related Dementia from March 2020 to February 2022 in the United States, Stratified by Place of Death. 
+
+```{R}
+                                               
+pod_crude_year_df<-readRDS("results/01_data/pod_crude_year_df.rds")
+
+pod_crude_year_df<-pod_crude_year_df %>%
+                 mutate (Year=ifelse(Year=="Year 1", "year1", "year2"))%>% 
+                 mutate (rr=observed/expected,
+                         rr_lower=observed/expected.upper,
+                         rr_upper=observed/expected.lower)
+
+######convert long to wide 
+
+pod_crude_year_df<-pod_crude_year_df %>%  pivot_wider(
+    id_cols = group,
+    names_from = Year,
+    values_from = observed:rr_upper)
+pod_crude_year_df<- pod_crude_year_df[c(3,4,2,1),]
+
+table_s4<- pod_crude_year_df
+
+table_s4 <-table_s4 %>%
+    transmute(
+        group,
+        observe_year1=round(observed_year1, digits=0),
+        expected_year1 = sprintf(
+            "%s (%s to %s)",
+            formatC2(expected_year1),
+            formatC2 (expected.lower_year1),
+            formatC2(expected.upper_year1)
+        ),
+        excess_year1 = sprintf(
+            "%s (%s to %s)",
+            formatC2(excess_year1),
+            formatC2(excess.lower_year1),
+            formatC2(excess.upper_year1)
+        ),
+        relative_risk_year1 = sprintf(
+            "%s (%s to %s)",
+            round(rr_year1,digits=2),
+            round(rr_lower_year1,digits=2),
+            round(rr_upper_year1,digits=2)
+        ),
+       observe_year2=round(observed_year2, digits=0),
+       expected_year2 = sprintf(
+            "%s (%s to %s)",
+            formatC2(expected_year2),
+            formatC2 (expected.lower_year2),
+            formatC2(expected.upper_year2)
+        ),
+        excess_year2 = sprintf(
+            "%s (%s to %s)",
+            formatC2(excess_year2),
+            formatC2(excess.lower_year2),
+            formatC2(excess.upper_year2)
+        ),
+        relative_risk_year2 = sprintf(
+            "%s (%s to %s)",
+            round(rr_year2,digits=2),
+            round(rr_lower_year2,digits=2),
+            round(rr_upper_year2,digits=2)
+        )
+        )
+        
+
+
+
+table_s4 <-table_s4   %>%
+    # select(-excess_per_100k ) %>%
+    kable(
+        #   format = "html",
+        col.names = c(
+            # "Population",
+            "",
+            "Observed deaths, March, 2020 to February,2021",
+            "Expected deaths, March, 2020 to February,2021",
+            "Excess deaths (95% PI), March, 2020 to February,2021",
+            "Observed to expected ratio (95% PI), March, 2020 to February,2021",
+            "Observed deaths, March, 2021 to February,2022",
+            "Expected deaths, March, 2021 to February,2022",
+            "Excess deaths (95% PI), March, 2021 to February,2022",
+            "Observed to expected ratio (95% PI), March, 2021 to February,2022"
+        ),
+        booktabs = TRUE
+    ) %>%
+    kableExtra::kable_styling(bootstrap = c("striped", "scale_down")) %>%
+    kableExtra::pack_rows("Place of Death", 1,4) 
+
+table_s4
+```
+
+
+eFigure3. Comparison of the number of institutionalized U.S. adults aged 65 or older with or without cognitive difficulty in 2020 and 2021. 
+
+```{R}
+                                               
+
+####READ DATA 
+acs_2020 <- readRDS(here("results/01_data/acs_2020.rds"))
+acs_2021 <- readRDS(here("results/01_data/acs_2021.rds"))
+tt_2020<-aggregate(n~typehugq+age5,data=subset(acs_2020,typehugq==2),FUN=sum) %>% mutate (year=2020)
+tt_cog_2020<-aggregate(n~typehugq+age5+drem,data=subset(acs_2020,typehugq==2),FUN=sum)%>% mutate (year=2020,
+                                                                                                  drem=as.character(drem)) 
+
+
+tt_2021<-aggregate(n~typehugq+age5,data=subset(acs_2021,typehugq==2),FUN=sum) %>% mutate (year=2021)
+tt_cog_2021<-aggregate(n~typehugq+age5+drem,data=subset(acs_2021,typehugq==2),FUN=sum)%>% mutate (year=2021)
+
+#####merge data 
+
+tt <- bind_rows(tt_2020, tt_2021)
+
+tt_cog <- bind_rows(tt_cog_2020, tt_cog_2021) %>% 
+    mutate(cog=ifelse(drem==1, "Having Cognitive difficulty",
+                      ifelse(drem==2, "No Cognitive difficulty",drem))) %>% 
+    select(-drem, -typehugq) %>% 
+    filter(! age5=="18-54" & ! age5=="55-64") 
+
+######check distribution 
+# ACS Census Plot - By year and cognitive difficulty statu
+
+tt_cog$year <- factor(tt_cog$year,levels=c("2020","2021"))
+acs_p <- ggplot(tt_cog, aes(year,n,fill=year)) + geom_bar(stat="identity") + scale_fill_jama()
+acs_p2<-acs_p + facet_grid(rows=vars(cog),cols=vars(age5)) + ylab("") + #ylab('Number of residents in nursing homes and LTCF') + 
+    xlab('Year')  + 
+    theme_bw() + theme(text = element_text(family = "serif")) +
+    scale_y_continuous(labels = label_comma()) + guides(fill=guide_legend(title="Year"))+ylim(0,400000)
+
+
+efig3<-acs_p2 + geom_text(aes(label = n), size = 3, hjust = 0.5, vjust = -0.5)
+
+
+
+```
+
+
+eFigure4. Adjusted observed number of deaths 
+
+```{R}
+     #####################################figure that show do not show per capita and use the adjusted observation death
+LINES <- c("black" = "solid", "#B24745FF" = "solid", "#B24745FF" = "dashed")
+
+pod_crude_df_adjusted<-readRDS("results/01_data/pod_crude_df_adjusted.rds") 
+
+
+
+
+long_adjusted<- pod_crude_df_adjusted  %>% 
+    pivot_longer(
+        cols = c("observed_updated","observed","expected"),
+        names_to = "type_death",
+        values_to = "value"
+    ) %>% mutate (type_death <- as.factor(type_death))
+
+####plot the monthly change plots
+efig4 <-
+    ggplot(data = long_adjusted ,aes(x = date, y = value,group=type_death, colour=type_death)) + geom_line(
+        aes(color=type_death,linetype = type_death,size=type_death))+
+    geom_ribbon(
+        aes(
+            x = date,
+            y = value,
+            ymin = expected.lower,
+            ymax = expected.upper
+        ),
+        data = long_adjusted%>% filter( type_death=="expected"),
+        alpha = 0.2,
+        fill = "#6F99ADFF", colour=NA,
+    )  + 
+    scale_x_date(limits = as.Date(c("2020-03-01", "2022-02-01")),
+                 date_breaks  = "3 month",
+                 date_labels = "%Y-%m") +
+    scale_color_manual(values = c("black","#B24745FF","#B24745FF"),
+                       labels=c("Expected Deaths","Observed Deaths","Adjusted Observed Deaths"),name="")+ scale_linetype_manual(values = c("solid", "solid", "dashed"), # Custom dashed line pattern
+                          labels = c("Expected Deaths", "Observed Deaths", "Adjusted Observed Deaths"), name = "")  +
+    scale_size_manual(values = c(0.8, 0.5,0.5),
+                      labels = c("Expected Deaths", "Observed Deaths", "Adjusted Observed Deaths"), name = "")+
+    labs(x = '', y = '') +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-09-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-06-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2021-11-01")),
+        linetype = "dashed",
+        color = "black",
+        size = 0.5
+    ) +
+    geom_vline(
+        xintercept = as.numeric(as.Date("2020-12-01")),
+        linetype = "dashed",
+        color = "red",
+        size = 0.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2020-06-01"),
+        y = Inf,
+        label = "Early Pandemic",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-01-01"),
+        y = Inf,
+        label = "Alpha",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5, hjust=-0.2
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2021-08-01"),
+        y = Inf,
+        label = "Delta",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        "text",
+        x = as.Date("2022-01-01"),
+        y = Inf,
+        label = "Omicron",
+        color = "black",
+        family = "serif",
+        size = 3, vjust = 1.5
+    ) +
+    annotate(
+        geom = "text",
+        x = as.Date("2021-02-05"),
+        y = 200,
+        label = "Vaccine rollout",
+        # hjust = -2,
+        size = 3, 
+        family="serif"
+    )+theme_bw() + theme(text = element_text(family = "serif", size = 12)) +
+    # #facet_grid(pod_cat~pod,scales = "free_y", switch = "y") +
+    # facet_wrap(~pod,nrow=1, scales = "free_x", strip.position = "top") +
+    theme(strip.background = element_rect(fill = "#20854E99"))+
+    theme(text = element_text(family = "serif", size = 12))+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),                                                             panel.background = element_blank())
+
+
+
+ggsave("results/02_figures/efig4.jpg", dpi = 300, width = 10, height = 4, units = "in")
+
+
+```
+
+
+
+
+
+Figure S5. Changes in State-level Crude Excess Deaths Associated with Alzheimer’s Disease and Dementia between Year 1 and Year 2 in the United States, by Maximum Vaccination Coverage Rate and Vaccination Velocity. 
+
+```{R}
+state_all_Vax_df<- readRDS("results/01_data/state_all_Vax_df_updated.RDS")
+state_all_Vax_df$state_abb<-state2abbr(state_all_Vax_df$state)
+
+
+#######non_standardized plot
+state_all_Vax_df <- state_all_Vax_df %>%  filter(!is.na(exc_diff_ter))
+state_all_Vax_df$exc_diff_ter<- factor( state_all_Vax_df$exc_diff_ter, levels=c(1,2,3),
+                                                    labels=c("Lowest Tertile of Year 1 Excess Deaths", "Middle Tertile of Year 1 Excess Deaths", "Highest Tertile of Year 1 Excess Deaths"))
+
+
+non_stand_k_plot <-  state_all_Vax_df  %>%   ggplot(aes(K_Complete_65Plus,exc_diff)) +
+  geom_text_repel(aes(label=state_abb), size=3) +
+  geom_point(size=1.5) +
+  theme_bw()+
+  facet_grid(~ exc_diff_ter)+
+  xlab("Vaccination Asymptotic Maximum Coverage Rate (K) (2 Doses, 65 Years and Older)") +
+  ylab("Percentage Changes in Excess Deaths between Year 1 and Year 2")+stat_cor(method = "pearson", label.y = 50)+
+   theme(text = element_text(family = "serif", size = 12))
+
+
+non_stand_v_plot <-  state_all_Vax_df %>%  ggplot(aes(v_Complete_65Plus,exc_diff)) +
+  geom_text_repel(aes(label=state_abb), size=3) +
+  geom_point(size=1.5) +
+  theme_bw()+
+  facet_grid(~ exc_diff_ter)+
+  xlab("Vaccination Coverage Velocity (V) (2 Doses, 65 Years and Older)") +
+  ylab("Percentage Changes in Excess Deaths between Year 1 and Year 2")+stat_cor(method = "pearson", label.y = 50, conf.level = 0.95) +theme(text = element_text(family = "serif", size = 12))
+
+ggsave(here("results/02_figures/non_stand_k_plot.jpg"),non_stand_k_plot, width = 12, height =6, scale = 1)
+
+ggsave(here("results/02_figures/non_stand_v_plot.jpg"),non_stand_v_plot, width = 12, height =6, scale = 1)
+
+
+
+###calculate the 95% CI
+# > cor_data <- state_all_Vax_df %>%
+# +     group_by(exc_diff_ter) %>%
+# +     summarise(
+# +         correlation = sprintf("%.2f", cor.test(v_Complete_65Plus, exc_diff)$estimate),
+# +         p_value = cor.test(v_Complete_65Plus, exc_diff)$p.value,
+# +         ci_lower = cor.test(v_Complete_65Plus, exc_diff)$conf.int[1],
+# +         ci_upper = cor.test(v_Complete_65Plus, exc_diff)$conf.int[2]
+# +     )
+# > 
+# > cor_data
+
+
+```
