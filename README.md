@@ -1,11 +1,5 @@
 
 
-<!-- README.md is generated from README.Rmd. Please edit that file -->
-
-```
-
-<!-- badges: start -->
-<!-- badges: end -->
 
 ## Excess mortality with Alzheimer disease and related dementias as an underlying or contributing cause during the COVID-19 pandemic in the US. 
 
